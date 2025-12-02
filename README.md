@@ -1,10 +1,16 @@
 
 This fork makes some features of nuzlocke challenges automated, and soem anticheat features:
+
 -Automatic death.
+
 -Capture limit per route.
+
 -No legendaries.
+
 -Save cipher.
+
 -Anti ragequit.
+
 -No cheat codes, savestates or features that modify normal playthroughs.
 
 
