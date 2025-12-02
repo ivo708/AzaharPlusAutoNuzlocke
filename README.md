@@ -1,5 +1,5 @@
 
-This fork makes some features of nuzlocke challenges automated, and soem anticheat features:
+This fork makes some features of nuzlocke challenges automated, and applies some anticheat features:
 
 -Automatic death.
 
