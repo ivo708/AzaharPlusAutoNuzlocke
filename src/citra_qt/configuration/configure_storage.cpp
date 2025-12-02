@@ -85,8 +85,8 @@ void ConfigureStorage::SetConfiguration() {
 }
 
 void ConfigureStorage::ApplyConfiguration() {
-    Settings::values.use_virtual_sd = ui->toggle_virtual_sd->isChecked();
-    Settings::values.use_custom_storage = ui->toggle_custom_storage->isChecked();
+    Settings::values.use_virtual_sd = true;
+    Settings::values.use_custom_storage = true;
     Settings::values.compress_cia_installs = ui->toggle_compress_cia->isChecked();
 
     if (!Settings::values.use_custom_storage) {

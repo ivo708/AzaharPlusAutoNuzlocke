@@ -105,6 +105,8 @@ add_library(citra_core STATIC
     file_sys/ticket.h
     file_sys/title_metadata.cpp
     file_sys/title_metadata.h
+	file_sys/xored_disk_file.cpp
+	file_sys/xored_disk_file.h
     frontend/applets/default_applets.cpp
     frontend/applets/default_applets.h
     frontend/applets/mii_selector.cpp
@@ -480,6 +482,12 @@ add_library(citra_core STATIC
     movie.h
     nus_download.cpp
     nus_download.h
+	poke_antirq.cpp
+	poke_antirq.h
+	poke_capture.cpp
+	poke_capture.h
+    poke_export.cpp
+    poke_export.h
     perf_stats.cpp
     perf_stats.h
     precompiled_headers.h

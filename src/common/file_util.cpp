@@ -774,109 +774,96 @@ std::unordered_map<UserPath, std::string> g_paths;
 std::unordered_map<UserPath, std::string> g_default_paths;
 } // namespace
 
-void SetUserPath(const std::string& path) {
-    std::string& user_path = g_paths[UserPath::UserDir];
+void SetUserPath(const std::string& /*path*/) {
+    // Construimos la ruta de la carpeta donde se encuentra el ejecutable
+    std::string exe_dir;
 
-    if (!path.empty() && CreateFullPath(path)) {
-        LOG_INFO(Common_Filesystem, "Using {} as the user directory", path);
-        user_path = path;
-        g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-        g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
-    } else {
 #ifdef _WIN32
-        user_path = GetExeDirectory() + DIR_SEP USERDATA_DIR DIR_SEP;
-        std::string& legacy_citra_user_path = g_paths[UserPath::LegacyCitraUserDir];
-        std::string& legacy_lime3ds_user_path = g_paths[UserPath::LegacyLime3DSUserDir];
-
-        if (!FileUtil::IsDirectory(user_path)) {
-            user_path = AppDataRoamingDirectory() + DIR_SEP EMU_DATA_DIR DIR_SEP;
-            legacy_citra_user_path =
-                AppDataRoamingDirectory() + DIR_SEP LEGACY_CITRA_DATA_DIR DIR_SEP;
-            legacy_lime3ds_user_path =
-                AppDataRoamingDirectory() + DIR_SEP LEGACY_LIME3DS_DATA_DIR DIR_SEP;
-        } else {
-            LOG_INFO(Common_Filesystem, "Using the local user directory");
-        }
-
-        g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-        g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
-#elif ANDROID
-        user_path = "/";
-        g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-        g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
+    // GetExeDirectory() ya existe en este fichero para Windows
+    exe_dir = GetExeDirectory();
+#elif defined(__APPLE__)
+    // En macOS intentamos obtener el bundle; si falla, caemos a GetCurrentDir()
+    auto bundle = GetBundleDirectory();
+    if (bundle.has_value()) {
+        exe_dir = bundle.value();
+        // GetBundleDirectory ya devuelve con separador final
+        if (!exe_dir.empty() && exe_dir.back() == DIR_SEP_CHR)
+            exe_dir.pop_back();
+    } else {
+        auto cur = FileUtil::GetCurrentDir();
+        exe_dir = cur.value_or(std::string());
+        if (!exe_dir.empty() && exe_dir.back() == DIR_SEP_CHR)
+            exe_dir.pop_back();
+    }
 #else
-        std::string& legacy_citra_user_path = g_paths[UserPath::LegacyCitraUserDir];
-        std::string& legacy_lime3ds_user_path = g_paths[UserPath::LegacyLime3DSUserDir];
-        auto current_dir = FileUtil::GetCurrentDir();
-        if (current_dir.has_value() &&
-            FileUtil::Exists(current_dir.value() + USERDATA_DIR DIR_SEP)) {
-            user_path = current_dir.value() + USERDATA_DIR DIR_SEP;
-            g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-            g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
-        } else {
-            std::string data_dir = GetUserDirectory("XDG_DATA_HOME") + DIR_SEP EMU_DATA_DIR DIR_SEP;
-
-            std::string legacy_citra_data_dir =
-                GetUserDirectory("XDG_DATA_HOME") + DIR_SEP LEGACY_CITRA_DATA_DIR DIR_SEP;
-            std::string legacy_lime3ds_data_dir =
-                GetUserDirectory("XDG_DATA_HOME") + DIR_SEP LEGACY_LIME3DS_DATA_DIR DIR_SEP;
-            std::string config_dir =
-                GetUserDirectory("XDG_CONFIG_HOME") + DIR_SEP EMU_DATA_DIR DIR_SEP;
-            std::string cache_dir =
-                GetUserDirectory("XDG_CACHE_HOME") + DIR_SEP EMU_DATA_DIR DIR_SEP;
-
-            g_paths.emplace(UserPath::LegacyCitraConfigDir,
-                            GetUserDirectory("XDG_CONFIG_HOME") +
-                                DIR_SEP LEGACY_CITRA_DATA_DIR DIR_SEP);
-            g_paths.emplace(UserPath::LegacyCitraCacheDir,
-                            GetUserDirectory("XDG_CACHE_HOME") +
-                                DIR_SEP LEGACY_CITRA_DATA_DIR DIR_SEP);
-            g_paths.emplace(UserPath::LegacyLime3DSConfigDir,
-                            GetUserDirectory("XDG_CONFIG_HOME") +
-                                DIR_SEP LEGACY_LIME3DS_DATA_DIR DIR_SEP);
-            g_paths.emplace(UserPath::LegacyLime3DSCacheDir,
-                            GetUserDirectory("XDG_CACHE_HOME") +
-                                DIR_SEP LEGACY_LIME3DS_DATA_DIR DIR_SEP);
-
-#if defined(__APPLE__)
-            // If XDG directories don't already exist from a previous setup, use standard macOS
-            // paths.
-            if (!FileUtil::Exists(data_dir) && !FileUtil::Exists(config_dir) &&
-                !FileUtil::Exists(cache_dir)) {
-                data_dir = GetHomeDirectory() + DIR_SEP EMU_APPLE_DATA_DIR DIR_SEP;
-                legacy_citra_data_dir =
-                    GetHomeDirectory() + DIR_SEP LEGACY_CITRA_APPLE_DATA_DIR DIR_SEP;
-                legacy_lime3ds_data_dir =
-                    GetHomeDirectory() + DIR_SEP LEGACY_LIME3DS_APPLE_DATA_DIR DIR_SEP;
-                config_dir = data_dir + CONFIG_DIR DIR_SEP;
-                cache_dir = data_dir + CACHE_DIR DIR_SEP;
-            }
+    // Linux / otros UNIX: intentamos leer /proc/self/exe (si está disponible).
+    // Si falla, usamos el directorio actual como fallback.
+    std::vector<char> buf(4096);
+    ssize_t len = -1;
+#if !defined(ANDROID)
+    len = readlink("/proc/self/exe", buf.data(), static_cast<int>(buf.size() - 1));
+#endif
+    if (len > 0) {
+        buf[len] = '\0';
+        std::string fullpath(buf.data());
+        auto pos = fullpath.find_last_of('/');
+        if (pos != std::string::npos)
+            exe_dir = fullpath.substr(0, pos);
+        else
+            exe_dir = fullpath;
+    } else {
+        auto cur = FileUtil::GetCurrentDir();
+        exe_dir = cur.value_or(std::string());
+        if (!exe_dir.empty() && exe_dir.back() == DIR_SEP_CHR)
+            exe_dir.pop_back();
+    }
 #endif
 
-            user_path = data_dir;
-            legacy_citra_user_path = legacy_citra_data_dir;
-            legacy_lime3ds_user_path = legacy_lime3ds_data_dir;
-            g_paths.emplace(UserPath::ConfigDir, config_dir);
-            g_paths.emplace(UserPath::CacheDir, cache_dir);
-        }
+    // Aseguramos que exe_dir no esté vacío; si lo está, usar home como último recurso.
+    if (exe_dir.empty()) {
+#ifdef _WIN32
+        exe_dir = AppDataRoamingDirectory(); // improbable, pero fallback razonable en Win
+#else
+        exe_dir = GetHomeDirectory();
 #endif
     }
 
-    g_paths.emplace(UserPath::SDMCDir, user_path + SDMC_DIR DIR_SEP);
-    g_paths.emplace(UserPath::NANDDir, user_path + NAND_DIR DIR_SEP);
-    g_paths.emplace(UserPath::SysDataDir, user_path + SYSDATA_DIR DIR_SEP);
-    // TODO: Put the logs in a better location for each OS
-    g_paths.emplace(UserPath::LogDir, user_path + LOG_DIR DIR_SEP);
-    g_paths.emplace(UserPath::CheatsDir, user_path + CHEATS_DIR DIR_SEP);
-    g_paths.emplace(UserPath::DLLDir, user_path + DLL_DIR DIR_SEP);
-    g_paths.emplace(UserPath::ShaderDir, user_path + SHADER_DIR DIR_SEP);
-    g_paths.emplace(UserPath::DumpDir, user_path + DUMP_DIR DIR_SEP);
-    g_paths.emplace(UserPath::LoadDir, user_path + LOAD_DIR DIR_SEP);
-    g_paths.emplace(UserPath::StatesDir, user_path + STATES_DIR DIR_SEP);
-    g_paths.emplace(UserPath::IconsDir, user_path + ICONS_DIR DIR_SEP);
-    g_paths.emplace(UserPath::PlayTimeDir, user_path + LOG_DIR DIR_SEP);
+    // Formar la ruta final: <exe_dir>/<USERDATA_DIR>/
+    std::string user_path = exe_dir;
+    // Asegurar separador
+    if (!user_path.empty() && user_path.back() != DIR_SEP_CHR)
+        user_path += DIR_SEP;
+    user_path += USERDATA_DIR;
+    if (user_path.back() != DIR_SEP_CHR)
+        user_path += DIR_SEP;
+
+    // Crear la ruta completa si es necesario
+    CreateFullPath(user_path);
+
+    // Rellenar g_paths usando user_path (forzando siempre la ruta local al exe)
+    g_paths.clear();
+    g_paths[UserPath::UserDir] = user_path;
+    g_paths[UserPath::ConfigDir] = user_path + CONFIG_DIR DIR_SEP;
+    g_paths[UserPath::CacheDir] = user_path + CACHE_DIR DIR_SEP;
+    g_paths[UserPath::SDMCDir] = user_path + SDMC_DIR DIR_SEP;
+    g_paths[UserPath::NANDDir] = user_path + NAND_DIR DIR_SEP;
+    g_paths[UserPath::SysDataDir] = user_path + SYSDATA_DIR DIR_SEP;
+    g_paths[UserPath::LogDir] = user_path + LOG_DIR DIR_SEP;
+    g_paths[UserPath::CheatsDir] = user_path + CHEATS_DIR DIR_SEP;
+    g_paths[UserPath::DLLDir] = user_path + DLL_DIR DIR_SEP;
+    g_paths[UserPath::ShaderDir] = user_path + SHADER_DIR DIR_SEP;
+    g_paths[UserPath::DumpDir] = user_path + DUMP_DIR DIR_SEP;
+    g_paths[UserPath::LoadDir] = user_path + LOAD_DIR DIR_SEP;
+    g_paths[UserPath::StatesDir] = user_path + STATES_DIR DIR_SEP;
+    g_paths[UserPath::IconsDir] = user_path + ICONS_DIR DIR_SEP;
+    g_paths[UserPath::PlayTimeDir] = user_path + LOG_DIR DIR_SEP;
+
+    // Mantener copia por defecto
     g_default_paths = g_paths;
+
+    LOG_INFO(Common_Filesystem, "Using executable directory as user directory: {}", user_path);
 }
+
 
 std::string g_currentRomPath{};
 
@@ -920,7 +907,7 @@ const std::string& GetDefaultUserPath(UserPath path) {
 }
 
 void UpdateUserPath(UserPath path, const std::string& filename) {
-    if (filename.empty()) {
+    /* if (filename.empty()) {
         return;
     }
     if (!FileUtil::IsDirectory(filename)) {
@@ -928,7 +915,7 @@ void UpdateUserPath(UserPath path, const std::string& filename) {
                   filename);
         return;
     }
-    g_paths[path] = SanitizePath(filename) + DIR_SEP;
+    g_paths[path] = SanitizePath(filename) + DIR_SEP;*/
 }
 
 std::size_t WriteStringToFile(bool text_file, const std::string& filename, std::string_view str) {

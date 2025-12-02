@@ -296,7 +296,7 @@ void Room::RoomImpl::ServerLoop() {
 }
 
 void Room::RoomImpl::StartLoop() {
-    room_thread = std::make_unique<std::thread>(&Room::RoomImpl::ServerLoop, this);
+    //room_thread = std::make_unique<std::thread>(&Room::RoomImpl::ServerLoop, this);
 }
 
 void Room::RoomImpl::HandleJoinRequest(const ENetEvent* event) {

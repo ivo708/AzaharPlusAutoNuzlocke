@@ -215,6 +215,11 @@ void System::LoadState(u32 slot) {
     // Deserialize
     iarchive ia{sstream};
     ia&* this;
+
+    if (std::remove(path.c_str()) == 0)
+        LOG_INFO(Core, "Savestate {} deleted after load.", path);
+    else
+        LOG_WARNING(Core, "Could not delete savestate {}.", path);
 }
 
 } // namespace Core

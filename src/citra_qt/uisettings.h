@@ -80,7 +80,7 @@ struct Values {
     Settings::Setting<bool> show_advanced_frametime_info{false, "show_advanced_frametime_info"};
 
     Settings::Setting<bool> confirm_before_closing{true, "confirmClose"};
-    Settings::Setting<bool> save_state_warning{true, "saveStateWarning"};
+    Settings::Setting<bool> save_state_warning{false, "saveStateWarning"};
     Settings::Setting<bool> first_start{true, "firstStart"};
     Settings::Setting<bool> pause_when_in_background{false, "pauseWhenInBackground"};
     Settings::Setting<bool> mute_when_in_background{false, "muteWhenInBackground"};

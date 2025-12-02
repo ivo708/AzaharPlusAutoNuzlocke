@@ -77,43 +77,12 @@
      <addaction name="action_Load_Amiibo"/>
      <addaction name="action_Remove_Amiibo"/>
     </widget>
-    <addaction name="action_Load_File"/>
-    <addaction name="action_Install_CIA"/>
-    <addaction name="action_Connect_Artic"/>
-    <addaction name="separator"/>
-    <addaction name="action_Remove_Azahar_Encryption"/>
-    <addaction name="action_Revert_Encryption_Removal"/>
-    <addaction name="separator"/>
-    <addaction name="menu_Boot_Home_Menu"/>
-    <addaction name="separator"/>
-    <addaction name="menu_recent_files"/>
-    <addaction name="separator"/>
-    <addaction name="menu_Amiibo"/>
-    <addaction name="separator"/>
-    <addaction name="action_Open_Citra_Folder"/>
-    <addaction name="separator"/>
     <addaction name="action_Exit"/>
    </widget>
    <widget class="QMenu" name="menu_Emulation">
     <property name="title">
      <string>Emulation</string>
     </property>
-    <widget class="QMenu" name="menu_Save_State">
-     <property name="title">
-      <string>Save State</string>
-     </property>
-     <addaction name="action_Save_to_Oldest_Slot"/>
-     <addaction name="action_Quick_Save"/>
-     <addaction name="separator"/>
-    </widget>
-    <widget class="QMenu" name="menu_Load_State">
-     <property name="title">
-      <string>Load State</string>
-     </property>
-     <addaction name="action_Load_from_Newest_Slot"/>
-     <addaction name="action_Quick_Load"/>
-     <addaction name="separator"/>
-    </widget>
     <addaction name="action_Pause"/>
     <addaction name="action_Stop"/>
     <addaction name="action_Restart"/>
@@ -304,14 +273,6 @@
    </property>
    <property name="text">
     <string>Pause</string>
-   </property>
-  </action>
-  <action name="action_Stop">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="text">
-    <string>Stop</string>
    </property>
   </action>
   <action name="action_Save">
@@ -671,14 +632,6 @@
   <action name="action_Report_Compatibility">
    <property name="text">
     <string>Report Compatibility</string>
-   </property>
-  </action>
-  <action name="action_Restart">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="text">
-    <string>Restart</string>
    </property>
   </action>
   <action name="action_Load_Amiibo">

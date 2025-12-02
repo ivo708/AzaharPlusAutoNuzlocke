@@ -78,6 +78,7 @@ class Timing;
 
 class System {
 public:
+    bool IsSaveStateInProgress() const;
     /**
      * Gets the instance of the System singleton class.
      * @returns Reference to the instance of the System singleton class.

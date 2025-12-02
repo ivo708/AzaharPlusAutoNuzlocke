@@ -6,6 +6,7 @@
 #include <QKeySequenceEdit>
 #include <QVBoxLayout>
 #include "citra_qt/util/sequence_dialog/sequence_dialog.h"
+#include "core/poke_antirq.h"
 
 SequenceDialog::SequenceDialog(QWidget* parent) : QDialog(parent) {
     setWindowTitle(tr("Enter a hotkey"));
@@ -43,5 +44,6 @@ bool SequenceDialog::focusNextPrevChild(bool next) {
 }
 
 void SequenceDialog::closeEvent(QCloseEvent*) {
+    PokeAntiRq::onClose();
     reject();
 }

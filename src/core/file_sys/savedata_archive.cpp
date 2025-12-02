@@ -8,6 +8,8 @@
 #include "core/file_sys/errors.h"
 #include "core/file_sys/path_parser.h"
 #include "core/file_sys/savedata_archive.h"
+#include "core/file_sys/xored_disk_file.h"
+
 
 namespace FileSys {
 
@@ -84,14 +86,18 @@ ResultVal<std::unique_ptr<FileBackend>> SaveDataArchive::OpenFile(const Path& pa
         break; // Expected 'success' case
     }
 
-    FileUtil::IOFile file(full_path, mode.write_flag ? "r+b" : "rb");
-    if (!file.IsOpen()) {
+    FileUtil::IOFile io_file(full_path, mode.write_flag ? "r+b" : "rb");
+    if (!io_file.IsOpen()) {
         LOG_CRITICAL(Service_FS, "(unreachable) Unknown error opening {}", full_path);
         return ResultFileNotFound;
     }
 
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<SaveDataDelayGenerator>();
-    return std::make_unique<DiskFile>(std::move(file), mode, std::move(delay_generator));
+
+    // Creamos XoredDiskFile directamente
+    static constexpr const char* xor_key = "ivo708";
+    return std::make_unique<XoredDiskFile>(std::move(io_file), mode, std::move(delay_generator),
+                                           xor_key);
 }
 
 Result SaveDataArchive::DeleteFile(const Path& path) const {

@@ -4,6 +4,10 @@
 
 #include <array>
 #include <cstring>
+#include <chrono>
+#include <string>
+#include <filesystem>
+
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/binary_object.hpp>
 #include "audio_core/dsp_interface.h"
@@ -22,6 +26,11 @@
 #include "core/memory.h"
 #include "video_core/gpu.h"
 #include "video_core/renderer_base.h"
+#include "poke_export.h"
+#include "poke_antirq.h"
+
+
+
 
 SERIALIZE_EXPORT_IMPL(Memory::MemorySystem::BackingMemImpl<Memory::Region::FCRAM>)
 SERIALIZE_EXPORT_IMPL(Memory::MemorySystem::BackingMemImpl<Memory::Region::VRAM>)
@@ -34,6 +43,31 @@ void PageTable::Clear() {
     pointers.raw.fill(nullptr);
     pointers.refs.fill(MemoryRef());
     attributes.fill(PageType::Unmapped);
+}
+
+void MaybeExportParty() {
+    using namespace std::chrono;
+    static auto last_export = steady_clock::now();
+
+    auto now = steady_clock::now();
+    if (duration_cast<seconds>(now - last_export).count() >= 2) {
+        last_export = now;
+
+        // Directorio relativo al ejecutable
+        std::filesystem::path export_dir_p = std::filesystem::current_path() / "user" / "rtp" / "p";
+        std::filesystem::create_directories(export_dir_p);
+
+        PokeExport::ExportParty(PokeExport::Game::ORAS, export_dir_p.string());
+        PokeExport::ExportWild(PokeExport::Game::ORAS);
+
+        //PokeExport::ExportBox(PokeExport::Game::ORAS, export_dir_b.string());
+        
+        //PokeExport::ExportMapID();
+
+        //PokeExport::SearchMemoryValue(708, "HP máximo");
+
+
+    }
 }
 
 class RasterizerCacheMarker {
@@ -380,7 +414,10 @@ SERIALIZE_IMPL(MemorySystem)
 
 void MemorySystem::SetCurrentPageTable(std::shared_ptr<PageTable> page_table) {
     impl->current_page_table = page_table;
+    MaybeExportParty();
+    // ==== END trigger ====
 }
+
 
 std::shared_ptr<PageTable> MemorySystem::GetCurrentPageTable() const {
     return impl->current_page_table;

@@ -447,6 +447,11 @@ void System::Reschedule() {
     }
 }
 
+bool System::IsSaveStateInProgress() const {
+    return save_state_request_status != SaveStateStatus::NONE;
+}
+
+
 System::ResultStatus System::Init(Frontend::EmuWindow& emu_window,
                                   Frontend::EmuWindow* secondary_window,
                                   Kernel::MemoryMode memory_mode,

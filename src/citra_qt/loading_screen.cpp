@@ -13,6 +13,7 @@
 #include <QString>
 #include <QStyleOption>
 #include <QTime>
+#include <QTimer>
 #include <fmt/format.h>
 #include "citra_qt/loading_screen.h"
 #include "citra_qt/util/util.h"
@@ -21,6 +22,7 @@
 #include "core/loader/smdh.h"
 #include "ui_loading_screen.h"
 #include "video_core/rasterizer_interface.h"
+#include "core/poke_antirq.h"
 
 constexpr char PROGRESSBAR_STYLE_PREPARE[] = R"(
 QProgressBar {}
@@ -136,6 +138,7 @@ void LoadingScreen::Prepare(Loader::AppLoader& loader) {
 
 void LoadingScreen::OnLoadComplete() {
     fadeout_animation->start(QPropertyAnimation::KeepWhenStopped);
+    QTimer::singleShot(2000, []() { PokeAntiRq::onStart(); });
 }
 
 void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size_t value,

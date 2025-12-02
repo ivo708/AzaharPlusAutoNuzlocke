@@ -215,12 +215,6 @@ void SdlConfig::ReadValues() {
     ReadSetting("Data Storage", Settings::values.use_custom_storage);
     ReadSetting("Data Storage", Settings::values.compress_cia_installs);
 
-    if (Settings::values.use_custom_storage) {
-        FileUtil::UpdateUserPath(FileUtil::UserPath::NANDDir,
-                                 sdl2_config->GetString("Data Storage", "nand_directory", ""));
-        FileUtil::UpdateUserPath(FileUtil::UserPath::SDMCDir,
-                                 sdl2_config->GetString("Data Storage", "sdmc_directory", ""));
-    }
 
     // System
     ReadSetting("System", Settings::values.is_new_3ds);
