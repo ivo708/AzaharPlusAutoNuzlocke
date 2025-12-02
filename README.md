@@ -1,3 +1,15 @@
+
+This fork makes some features of nuzlocke challenges automated, and soem anticheat features:
+-Automatic death.
+-Capture limit per route.
+-No legendaries.
+-Save cipher.
+-Anti ragequit.
+-No cheat codes, savestates or features that modify normal playthroughs.
+
+
+---
+
 <b>AzaharPlus</b> is a fork of the Azahar 3DS emulator that restores some features.
 
 Each version is the same as the corresponding version of Azahar exept for these features:
