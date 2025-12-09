@@ -56,9 +56,7 @@ void MaybeExportParty() {
         // Directorio relativo al ejecutable
         std::filesystem::path export_dir_p = std::filesystem::current_path() / "user" / "rtp" / "p";
         std::filesystem::create_directories(export_dir_p);
-
         PokeExport::ExportParty(PokeExport::Game::ORAS, export_dir_p.string());
-        PokeExport::ExportWild(PokeExport::Game::ORAS);
 
         //PokeExport::ExportBox(PokeExport::Game::ORAS, export_dir_b.string());
         

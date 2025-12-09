@@ -24,6 +24,7 @@ struct BattleSlotData {
     uint16_t species;   // 0x0E4
     uint16_t item;      // 0x002
     uint16_t ability;   // 0x006
+    uint16_t level;   // 0x008
     uint8_t moveIDs[4]; // 0x104, 0x110, 0x122, 0x12E
     uint8_t movePP[4];  // PP actual de cada movimiento 0x106, 0x112, 0x124, 0x130 (aprox)
 };
@@ -50,13 +51,24 @@ constexpr std::size_t POKEMON_SLOT_STRIDE = 484;
 
 constexpr int MAX_WILDS = 5;
 constexpr int PARTY_SIZE = 6;
-constexpr int BOX_SLOTS = 31 * 30;
+constexpr int PC_SIZE = (31 * 30);
 
 // Offsets PK6
 constexpr std::size_t OFF_PID = 0x18;
 constexpr std::size_t OFF_SPECIES = 0x08;
 constexpr std::size_t OFF_METLOCATION = 0xDA;
 constexpr std::size_t OFF_CURRENT_HP = 0xF0;
+
+
+// Offsets Guarderia
+constexpr VAddr parent1_1 = 0x8c88180;
+constexpr VAddr parent2_1 = 0x8c88270;
+constexpr VAddr parent1_2 = 0x8c88370;
+constexpr VAddr parent2_2 = 0x8c88460;
+constexpr VAddr is_parent1_occupied_1 = 0x8c88178;
+constexpr VAddr is_parent2_occupied_1 = 0x8c88268;
+constexpr VAddr is_parent1_occupied_2 = 0x8c88368;
+constexpr VAddr is_parent2_occupied_2 = 0x8c88458;
 
 
 // Memoria de battle HP (detectadas)
@@ -83,12 +95,9 @@ bool ExportParty(Game game, const std::string& out_dir);
 
 bool ExportWild(Game game);
 
+int ReadPk6PCSlot(int pc_slot);
+
 uint16_t ExportMapID();
-
-
-//bool ExportBox(Game game, const std::string& out_dir);
-
-
 
 bool isBattleTrainer();
 

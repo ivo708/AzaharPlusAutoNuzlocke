@@ -15,6 +15,7 @@
 #include "core/global.h"
 #include "core/memory.h"
 #include "poke_capture.h"
+#include <nlohmann/json.hpp>
 
 Pk6FullData g_partyData[PARTY_SIZE];
 BattleSlotData g_battleData[PARTY_SIZE];
@@ -124,42 +125,109 @@ static bool DecryptPk6InPlace(std::vector<uint8_t>& buf, std::size_t size, bool 
 
 // Funcion de encriptado para el blank
 static bool EncryptPk6InPlace(std::vector<uint8_t>& buf, std::size_t size, bool is_party) {
-    // Tamaño base según sea party o box
-    const std::size_t PK6_SIZE = is_party ? PKM_PARTY_SIZE : PKM_BOX_SIZE;
-    if (size < PK6_SIZE)
+    // Validación de tamaño (party o box)
+    const std::size_t PKM_MAIN_ENCRYPTED_SIZE = 224;
+    const std::size_t PKM_ENCRYPTED_START = 0x08;
+    const std::size_t PKM_BLOCK_SIZE = 56;
+    if ((is_party && size < PKM_PARTY_SIZE) || (!is_party && size < PKM_BOX_SIZE))
         return false;
 
-    // Recalcular checksum sobre los 224 bytes en claro: bytes 0x08..0x87 (224 bytes)
+    // Tabla de orden de bloques (idéntica a la usada en DecryptPk6InPlace)
+    constexpr std::array<std::array<int, 4>, 24> BLOCK_ORDERS = {
+        {{{0, 1, 2, 3}}, {{0, 1, 3, 2}}, {{0, 2, 1, 3}}, {{0, 2, 3, 1}}, {{0, 3, 1, 2}},
+         {{0, 3, 2, 1}}, {{1, 0, 2, 3}}, {{1, 0, 3, 2}}, {{1, 2, 0, 3}}, {{1, 2, 3, 0}},
+         {{1, 3, 0, 2}}, {{1, 3, 2, 0}}, {{2, 0, 1, 3}}, {{2, 0, 3, 1}}, {{2, 1, 0, 3}},
+         {{2, 1, 3, 0}}, {{2, 3, 0, 1}}, {{2, 3, 1, 0}}, {{3, 0, 1, 2}}, {{3, 0, 2, 1}},
+         {{3, 1, 0, 2}}, {{3, 1, 2, 0}}, {{3, 2, 0, 1}}, {{3, 2, 1, 0}}}};
+    constexpr uint32_t LCG_A = 0x41C64E6Du;
+    constexpr uint32_t LCG_C = 0x6073u;
+
+    // --- 1) Recalcular checksum sobre bytes EN CLARO (0x08..0x08+224-1) y escribirlo ---
     uint16_t checksum = 0;
-    for (std::size_t off = 0x08; off < 0x08 + 224; off += 2) {
+    for (std::size_t off = PKM_ENCRYPTED_START; off < PKM_ENCRYPTED_START + PKM_MAIN_ENCRYPTED_SIZE;
+         off += 2) {
         checksum = static_cast<uint16_t>(checksum + ReadLE16(buf.data(), off));
     }
     WriteLE16(buf.data(), 0x06, checksum);
 
-    // PRNG seed = Encryption Key (offset 0x00..0x03)
-    uint32_t enc_key = ReadLE32(buf.data(), 0x0);
+    // --- 2) Preparar arrays para shuffle ---
+    std::array<uint8_t, PKM_MAIN_ENCRYPTED_SIZE> main_clear;
+    std::memcpy(main_clear.data(), buf.data() + PKM_ENCRYPTED_START, PKM_MAIN_ENCRYPTED_SIZE);
+
+    // Determinar shift a partir del Encryption Key (offset 0x00..0x03)
+    uint32_t enc_key = ReadLE32(buf.data(), 0x00);
+    uint32_t shift = ((enc_key & 0x3E000u) >> 13) % 24u;
+    const auto& order = BLOCK_ORDERS[shift];
+
+    // Construir la versión "shuffled" (la que luego será XOR-eada)
+    std::array<uint8_t, PKM_MAIN_ENCRYPTED_SIZE> main_shuffled;
+    for (int k = 0; k < 4; ++k) {
+        // main_shuffled[k] = main_clear[ order[k] ]
+        std::memcpy(main_shuffled.data() + k * PKM_BLOCK_SIZE,
+                    main_clear.data() + order[k] * PKM_BLOCK_SIZE, PKM_BLOCK_SIZE);
+    }
+
+    // Copiar el main shuffled AL BUFFER (antes del XOR)
+    std::memcpy(buf.data() + PKM_ENCRYPTED_START, main_shuffled.data(), PKM_MAIN_ENCRYPTED_SIZE);
+
+    // --- 3) XOR (LCG) sobre la parte principal (ya shuffleada) ---
     uint32_t state = enc_key;
     auto next_u16 = [&]() -> uint16_t {
-        state = state * 0x41C64E6D + 0x6073;
+        state = state * LCG_A + LCG_C;
         return static_cast<uint16_t>((state >> 16) & 0xFFFF);
     };
 
-    // XOR de los 224 bytes (desde 0x08)
-    for (std::size_t off = 0x08; off < 0x08 + 224; off += 2) {
+    for (std::size_t off = PKM_ENCRYPTED_START; off < PKM_ENCRYPTED_START + PKM_MAIN_ENCRYPTED_SIZE;
+         off += 2) {
+        if (off + 1 >= size)
+            break;
         uint16_t w = ReadLE16(buf.data(), off);
-        uint16_t r = next_u16();
-        w ^= r;
+        w ^= next_u16();
         WriteLE16(buf.data(), off, w);
     }
 
-    // Si es party, mantenemos el tamaño y dejamos los Battle Stats como están:
-    // EncryptBattleStats se encargará de encriptarlos (avanzando el RNG correctamente).
+    // --- 4) Si es party: encriptar Battle Stats (0xE8..0x103) continuando la secuencia RNG ---
     if (is_party) {
-        if (buf.size() < PKM_PARTY_SIZE)
-            buf.resize(PKM_PARTY_SIZE);
+        for (std::size_t off = 0xE8; off < 0x104; off += 2) {
+            if (off + 1 >= size)
+                break;
+            uint16_t w = ReadLE16(buf.data(), off);
+            w ^= next_u16();
+            WriteLE16(buf.data(), off, w);
+        }
     }
 
     return true;
+}
+
+
+namespace fs = std::filesystem;
+static nlohmann::json readJson(const fs::path& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("No se pudo abrir el archivo: " + filepath.string());
+    }
+    nlohmann::json j;
+    file >> j;
+    return j;
+}
+
+
+static int getExperienceForLevel(const fs::path& pokemonPath, const fs::path& curvesPath, int pokemon, int level) {
+    fs::path pokemonFile = pokemonPath / (std::to_string(pokemon) + ".json");
+    nlohmann::json pokemonData = readJson(pokemonFile);
+    int growthRateId = pokemonData["growth_rate_id"];
+
+    fs::path curveFile = curvesPath / (std::to_string(growthRateId) + ".json");
+    nlohmann::json curveData = readJson(curveFile);
+
+    for (auto& lvl : curveData["levels"]) {
+        if (lvl["level"] == level) {
+            return lvl["experience"];
+        }
+    }
+
+    throw std::runtime_error("Nivel no encontrado en la curva: " + std::to_string(level));
 }
 
 bool isBattle() {
@@ -304,8 +372,14 @@ bool ReadPk6Slot(int party_slot, Pk6FullData* outPk6, bool isWild) {
     if (!outPk6 || party_slot < 0 || party_slot >= PARTY_SIZE)
         return false;
 
+    VAddr slot_addr;
     std::vector<uint8_t> buf(PKM_PARTY_SIZE);
-    VAddr slot_addr = PARTY_ORAS + static_cast<VAddr>(party_slot * POKEMON_SLOT_STRIDE);
+    if (isWild) {
+        slot_addr = WILD_ORAS + static_cast<VAddr>(party_slot * POKEMON_SLOT_STRIDE);
+    }
+    else {
+        slot_addr = PARTY_ORAS + static_cast<VAddr>(party_slot * POKEMON_SLOT_STRIDE);
+    }
     Mem().ReadBlock(slot_addr, buf.data(), buf.size());
 
     if (!DecryptPk6InPlace(buf, buf.size(), true))
@@ -359,6 +433,7 @@ bool ReadPk6Slot(int party_slot, Pk6FullData* outPk6, bool isWild) {
     return true;
 }
 
+
 static uint16_t ReadBattleHPFromSlot(int slot) {
 
     if (slot < 0 || slot >= PARTY_SIZE)
@@ -397,6 +472,12 @@ void ReadBattleSlot(int slot, BattleSlotData* outData) {
     uint16_t species;
     Mem().ReadBlock(base + 0x0E4, reinterpret_cast<uint8_t*>(&species), sizeof(species));
     outData->species = species;
+
+    // Leer level (2 bytes)
+    uint16_t level;
+    Mem().ReadBlock(base + 0x008, reinterpret_cast<uint8_t*>(&level), sizeof(level));
+    outData->level = level;
+
     // Leer item (2 bytes)
     uint16_t item;
     Mem().ReadBlock(base + 0x002, reinterpret_cast<uint8_t*>(&item), sizeof(item));
@@ -414,8 +495,7 @@ void ReadBattleSlot(int slot, BattleSlotData* outData) {
     }
 }
 
-bool MatchBattleSlotToPk6(const BattleSlotData& b, const Pk6FullData& p, int party_slot,
-                          int battle_slot) {
+bool MatchBattleSlotToPk6(const BattleSlotData& b, const Pk6FullData& p, int party_slot, int battle_slot) {
     // Comparar especie, objeto y habilidad
     if (b.species != p.species || b.item != p.item || b.ability != p.ability) {
         LOG_INFO(HW_Memory,
@@ -764,6 +844,7 @@ void ExportPartyDataTxt(const std::string& out_dir) {
 }
 
 // Exporta los datos de un Battle Slot a un archivo txt
+[[maybe_unused]]
 void ExportBattleSlotDataTxt(int battleSlot, const std::filesystem::path& out_dir) {
     if (!isBattle())
         return;
@@ -805,11 +886,7 @@ void ExportBattleSlotDataTxt(int battleSlot, const std::filesystem::path& out_di
     LOG_INFO(HW_Memory, "Exportación de battle slot {} -> {}", battleSlot, file_path.string());
 }
 
-// OnBattleEnded
-static void OnBattleEnded(const std::filesystem::path& base_path) {
-    PokemonCapture::RestorePokeballs();
-    LOG_INFO(HW_Memory, "poke_export: OnBattleEnded - convirtiendo Pokémon muertos en Shedinja");
-
+static void DeleteFaintedPokemon(const std::filesystem::path& base_path) {
     for (int i = 0; i < 6; ++i) {
         if (g_pending_delete[i]) {
             LOG_INFO(HW_Memory, "poke_export: SLOT %d{} PENDING DELETE ", i);
@@ -827,8 +904,7 @@ static void OnBattleEnded(const std::filesystem::path& base_path) {
         // Comparar con los Pokémon en party
         for (int party_slot = 0; party_slot < PARTY_SIZE; ++party_slot) {
             // Leer la PK6 directamente desde memoria
-            if (MatchBattleSlotToPk6(g_battleData[battle_slot], g_partyData[party_slot], party_slot,
-                                     battle_slot)) {
+            if (MatchBattleSlotToPk6(g_battleData[battle_slot], g_partyData[party_slot], party_slot, battle_slot)) {
                 LOG_INFO(HW_Memory, "poke_export: Convirtiendo slot %d{} en Shedinja muerto",
                          party_slot);
 
@@ -850,12 +926,76 @@ static void OnBattleEnded(const std::filesystem::path& base_path) {
     }
 
     g_pending_delete = {false, false, false, false, false, false};
-    LOG_INFO(HW_Memory, "poke_export: OnBattleEnded - %d Pokémon convertidos a Shedinja",
-             converted_count);
+    LOG_INFO(HW_Memory, "poke_export: OnBattleEnded - %d Pokémon convertidos a Shedinja", converted_count);
+
+}
+
+static void LevelCapAdjustment() {
+    fs::path pokemonGrowths = fs::current_path() / "user" / "rtp" / "GrowthRates" / "pokemon";
+    fs::path levelCurves = fs::current_path() / "user" / "rtp" / "GrowthRates" / "curves";
+
+    int currentLevelCap = 8;
+
+    for (int battle_slot = 0; battle_slot < PARTY_SIZE; ++battle_slot) {
+        if (g_battleData[battle_slot].level >= currentLevelCap) {
+            for (int party_slot = 0; party_slot < PARTY_SIZE; ++party_slot) {
+                if (MatchBattleSlotToPk6(g_battleData[battle_slot], g_partyData[party_slot],
+                                         party_slot, battle_slot)) {
+                    int experience =
+                        getExperienceForLevel(pokemonGrowths, levelCurves,
+                                              g_partyData[party_slot].species, currentLevelCap);
+
+                    VAddr slot_addr =
+                        PARTY_ORAS + static_cast<VAddr>(party_slot * POKEMON_SLOT_STRIDE);
+                    std::vector<uint8_t> slot_data(POKEMON_SLOT_STRIDE);
+                    Mem().ReadBlock(slot_addr, slot_data.data(), slot_data.size());
+
+                    // Trabajar sobre TODO el buffer de party (260 bytes)
+                    std::vector<uint8_t> pk6_data(slot_data.begin(),
+                                                  slot_data.begin() + PKM_PARTY_SIZE);
+
+
+                    if (!DecryptPk6InPlace(pk6_data, pk6_data.size(), true)) {
+                        continue;
+                    }
+
+                    // Modificar experiencia
+                    WriteLE32(pk6_data.data(), 0x10, static_cast<uint32_t>(experience));
+
+                    // Recalcular checksum sobre los 224 bytes cifrados (0x08..0xE7)
+                    uint16_t checksum = 0;
+                    for (size_t off = 0x08; off < 0x08 + 224; off += 2)
+                        checksum = static_cast<uint16_t>(checksum + ReadLE16(pk6_data.data(), off));
+                    WriteLE16(pk6_data.data(), 0x06, checksum);
+
+                    if (!EncryptPk6InPlace(pk6_data, pk6_data.size(), true)) {
+                        continue;
+                    }
+
+                    // Copiar TODO el buffer de vuelta a slot_data
+                    std::copy(pk6_data.begin(), pk6_data.end(), slot_data.begin());
+
+                    // Escribir de vuelta a memoria
+                    Mem().WriteBlock(slot_addr, slot_data.data(), slot_data.size());
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// OnBattleEnded
+static void OnBattleEnded(const std::filesystem::path& base_path) {
+    PokemonCapture::RestorePokeballs();
+    LOG_INFO(HW_Memory, "poke_export: OnBattleEnded - convirtiendo Pokémon muertos en Shedinja");
+    DeleteFaintedPokemon(base_path);
+    LevelCapAdjustment();
+    
 }
 
 static void OnBattleStarted(const std::filesystem::path& base_path) {
     LOG_INFO(HW_Memory, "poke_export: BattleStarted");
+    PokeExport::ExportWild(PokeExport::Game::ORAS);
     PokemonCapture::RemovePokeballs();
 }
 
@@ -886,14 +1026,14 @@ bool ExportParty(Game game, const std::string& out_dir) {
         ReadPk6Slot(slot, &g_partyData[slot], false);
         if (isBattle()) {
             ReadBattleSlot(slot, &g_battleData[slot]);
-            ExportBattleSlotDataTxt(slot, out_dir);
+            //ExportBattleSlotDataTxt(slot, out_dir);
             uint16_t currenthp = ReadBattleHPFromSlot(slot);
             if (currenthp == 0 && g_partyData[slot].pid != 0 && g_partyData[slot].species <= 721) {
                 g_pending_delete[slot] = true;
             }
         }
     }
-    ExportPartyDataTxt(out_dir);
+    //ExportPartyDataTxt(out_dir);
     CheckBattleTransition(out_dir);
     return all_ok;
 }
@@ -905,6 +1045,18 @@ bool ExportWild(Game game) {
         ReadPk6Slot(slot, &g_wildData[slot], true);
     }
     return all_ok;
+}
+
+// Devuelve Species de un slot del PC
+int ReadPk6PCSlot(int pc_slot) {
+    std::vector<uint8_t> buf(PKM_BOX_SIZE);
+    VAddr slot_addr = PC_ORAS + static_cast<VAddr>(pc_slot * PKM_BOX_SIZE);
+    Mem().ReadBlock(slot_addr, buf.data(), buf.size());
+
+    if (!DecryptPk6InPlace(buf, buf.size(), false))
+        return 0;
+    uint16_t species = ReadLE16(buf.data(), 0x08);
+    return species;
 }
 
 // Export mapid

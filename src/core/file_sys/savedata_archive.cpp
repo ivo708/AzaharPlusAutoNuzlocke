@@ -94,10 +94,14 @@ ResultVal<std::unique_ptr<FileBackend>> SaveDataArchive::OpenFile(const Path& pa
 
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<SaveDataDelayGenerator>();
 
+    //Save normal para debug
+    return std::make_unique<DiskFile>(std::move(io_file), mode, std::move(delay_generator));
+
+
+
     // Creamos XoredDiskFile directamente
     static constexpr const char* xor_key = "ivo708";
-    return std::make_unique<XoredDiskFile>(std::move(io_file), mode, std::move(delay_generator),
-                                           xor_key);
+    return std::make_unique<XoredDiskFile>(std::move(io_file), mode, std::move(delay_generator), xor_key);
 }
 
 Result SaveDataArchive::DeleteFile(const Path& path) const {

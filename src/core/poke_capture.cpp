@@ -1,3 +1,4 @@
+#include "poke_capture.h"
 #include <memory>
 #include <optional>
 #include <vector>
@@ -7,6 +8,7 @@
 #include <set>
 #include <cstdint>
 #include <iostream>
+#include <unordered_set>
 
 #include "common/logging/log.h"
 #include "core/memory.h"
@@ -32,7 +34,7 @@ const size_t SLOT_SIZE = 4;
 const size_t SLOT_COUNT = 270;
 const size_t BLOCK_SIZE = SLOT_SIZE * SLOT_COUNT;
 
-std::set<uint16_t> legendarySpecies = {144, 145, 146, 150, 151,
+const std::set<uint16_t> legendarySpecies = {144, 145, 146, 150, 151,
                                        243, 244, 245, 249, 250, 251,
                                        377, 378, 379, 380, 381, 382, 383, 384, 385, 386,
                                        480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493,
@@ -40,7 +42,50 @@ std::set<uint16_t> legendarySpecies = {144, 145, 146, 150, 151,
                                        716, 717, 718, 719, 720, 721
                                       };
 
+const int evolutionLines[722] = {
+    0,
+    1,   1,   1,   2,   2,   2,   3,   3,   3,   4,   4,   4,   5,   5,   5,   6,   6,   6,   7,
+    7,   8,   8,   9,   9,   10,  10,  11,  11,  12,  12,  12,  13,  13,  13,  14,  14,  15,  15,
+    16,  16,  17,  17,  18,  18,  18,  19,  19,  20,  20,  21,  21,  22,  22,  23,  23,  24,  24,
+    25,  25,  26,  26,  26,  27,  27,  27,  28,  28,  28,  29,  29,  29,  30,  30,  31,  31,  31,
+    32,  32,  33,  33,  34,  34,  35,  36,  36,  37,  37,  38,  38,  39,  39,  40,  40,  40,  41,
+    42,  42,  43,  43,  44,  44,  45,  45,  46,  46,  47,  47,  48,  49,  49,  50,  50,  51,  52,
+    53,  54,  54,  55,  55,  56,  56,  57,  58,  59,  60,  61,  62,  63,  64,  64,  65,  66,  67,
+    67,  67,  67,  68,  69,  69,  70,  70,  71,  72,  73,  74,  75,  76,  76,  76,  77,  78,  79,
+    79,  79,  80,  80,  80,  81,  81,  81,  82,  82,  83,  83,  84,  84,  85,  85,  17,  86,  86,
+    10,  14,  16,  87,  87,  88,  88,  89,  89,  89,  18,  90,  90,  91,  26,  92,  92,  92,  93,
+    94,  94,  95,  96,  96,  67,  67,  97,  33,  98,  99,  100, 101, 102, 102, 103, 104, 41,  105,
+    105, 106, 58,  107, 108, 109, 110, 110, 111, 111, 112, 112, 113, 114, 114, 115, 116, 117, 118,
+    118, 54,  119, 119, 68,  120, 121, 47,  47,  59,  60,  61,  122, 51,  123, 124, 125, 126, 126,
+    126, 127, 128, 129, 130, 130, 130, 131, 131, 131, 132, 132, 132, 133, 133, 134, 134, 135, 135,
+    135, 135, 135, 136, 136, 136, 137, 137, 137, 138, 138, 139, 139, 140, 140, 140, 141, 141, 142,
+    142, 143, 143, 143, 144, 144, 144, 145, 145, 145, 146, 146, 90,  147, 148, 148, 149, 150, 151,
+    151, 151, 152, 152, 153, 153, 154, 155, 156, 157, 158, 159, 159, 160, 160, 161, 161, 162, 162,
+    163, 164, 164, 165, 166, 166, 166, 167, 167, 168, 168, 169, 170, 171, 172, 173, 173, 174, 174,
+    175, 175, 176, 176, 177, 177, 178, 178, 179, 180, 181, 181, 182, 182, 183, 184, 185, 100, 186,
+    186, 187, 187, 187, 188, 188, 188, 189, 190, 191, 191, 191, 192, 192, 192, 193, 194, 195, 196,
+    197, 198, 199, 200, 201, 202, 203, 203, 203, 204, 204, 204, 205, 205, 205, 206, 206, 206, 207,
+    207, 208, 208, 209, 209, 209, 158, 158, 211, 211, 212, 212, 213, 213, 213, 214, 214, 215, 216,
+    216, 217, 217, 218, 218, 93,  219, 219, 220, 220, 98,  97,  221, 221, 184, 223, 223, 224, 224,
+    91,  57,  51,  228, 229, 230, 230, 230, 72,  232, 232, 233, 233, 234, 234, 235, 235, 236, 237,
+    237, 116, 239, 239, 109, 34,  48,  50,  52,  60,  61,  87,  95,  67,  67,  104, 112, 68,  140,
+    147, 182, 186, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 250, 252, 253, 254, 255,
+    256, 256, 256, 257, 257, 257, 258, 258, 258, 259, 259, 260, 260, 260, 261, 261, 262, 262, 263,
+    263, 264, 264, 265, 265, 266, 266, 266, 267, 267, 268, 268, 268, 269, 269, 270, 270, 271, 272,
+    272, 272, 273, 273, 273, 274, 275, 276, 276, 276, 277, 277, 277, 278, 278, 279, 279, 280, 281,
+    281, 281, 282, 282, 283, 284, 284, 285, 285, 286, 287, 287, 288, 288, 289, 289, 290, 290, 291,
+    291, 292, 292, 293, 293, 293, 294, 294, 294, 295, 295, 296, 296, 296, 297, 297, 298, 299, 299,
+    300, 300, 301, 301, 302, 303, 303, 304, 304, 305, 305, 305, 306, 306, 306, 307, 307, 308, 308,
+    308, 309, 309, 309, 310, 310, 311, 312, 312, 313, 314, 314, 315, 316, 316, 317, 317, 318, 319,
+    319, 320, 320, 321, 322, 323, 323, 323, 324, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333,
+    334, 335, 336, 337, 337, 337, 338, 338, 338, 339, 339, 339, 340, 340, 341, 341, 341, 342, 342,
+    342, 343, 343, 344, 344, 344, 345, 345, 346, 346, 347, 348, 348, 349, 349, 349, 350, 350, 351,
+    351, 352, 352, 353, 353, 354, 354, 355, 355, 356, 356, 357, 357, 358, 358, 67,  359, 360, 361,
+    362, 362, 362, 363, 364, 364, 365, 365, 366, 366, 367, 367, 368, 369, 370, 371, 372, 373};
+
 std::set<uint16_t> g_visitedRoutes;
+
+std::unordered_set<int> g_caught;
 
 
 
@@ -115,6 +160,38 @@ void loadVisitedRoutes() {
     inFile.close();
 }
 
+
+
+
+void loadCaughtPokemon() {
+    g_caught.clear();
+    int species;
+    for (int i = 0; i < PC_SIZE; i++) {
+        species = PokeExport::ReadPk6PCSlot(i);
+        if (species != 0) {
+            g_caught.insert(species);
+        }
+    }
+    for (int i = 0; i < PARTY_SIZE; i++) {
+        species = g_partyData[i].species;
+        if (species != 0) {
+            g_caught.insert(species);
+        }
+    }
+    
+}
+
+bool hasEvolutionLine(int species) {
+    int evolutionLine = evolutionLines[species];
+    for (int c : g_caught) {
+        if (evolutionLines[c] == evolutionLine) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 [[maybe_unused]]
 bool ExportMainPocketToTxt() {
     namespace fs = std::filesystem;
@@ -164,6 +241,16 @@ bool ShouldRemove() {
             return true;
         }
     }
+
+    //Si el jugador ya tiene a un pokemon de esa familia evolutiva SI (no se marca la ruta)
+    for (int i = 0; i < MAX_WILDS; i++) {
+        // Comprueba si la especie esta en el set de especies de legendarios
+        if (hasEvolutionLine(g_wildData[i].species) && g_wildData[i].species != 0) {
+            LOG_INFO(HW_Memory, "poke_capture: POKEMON YA CAPTURADO (LINEA EVOLUTIVA)");
+            return true;
+        }
+    }
+    
     
     loadVisitedRoutes();
     uint16_t currentMapID = PokeExport::ExportMapID();
@@ -185,7 +272,10 @@ bool ShouldRemove() {
     }
 
     //Si llega aqui significa que es contra pokemon salvaje, ruta nueva y no hay shiny ni legendario.
-    g_visitedRoutes.insert(currentMapID);
+    fs::path firstPokeballFlag = fs::current_path() / "user" / "rtp" / "p" / "haspkb.bin";
+    if (fs::exists(firstPokeballFlag)) { //Solo marcar las rutas cuando el jugador haya obtenido las primeras PokeBall
+        g_visitedRoutes.insert(currentMapID);
+    }
     saveVisitedRoutes();
     LOG_INFO(HW_Memory, "poke_capture: NADA RELEVANTE PARA LA CAPTURA");
 
@@ -195,6 +285,11 @@ bool ShouldRemove() {
 //Quita las PokeBall
 bool RemovePokeballs() {
     LOG_INFO(HW_Memory, "poke_capture: RemovePokeBalls()");
+
+    //Cargar todos los pokemon capturados
+    loadCaughtPokemon();
+
+
     if (!ShouldRemove()) {
         LOG_INFO(HW_Memory, "poke_capture: NO SE VAN A QUITAR LAS POKEBALL");
         return false;
@@ -203,6 +298,7 @@ bool RemovePokeballs() {
 
     std::vector<uint8_t> buffer(BLOCK_SIZE);
     Mem().ReadBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
+    fs::path firstPokeballFlag = fs::current_path() / "user" / "rtp" / "p" / "haspkb.bin";
 
     // Parsear cada slot en id y cantidad y guardarlo en arrays
     for (size_t i = 0; i < 270; ++i) {
@@ -210,6 +306,9 @@ bool RemovePokeballs() {
         uint16_t id = buffer[off] | (buffer[off + 1] << 8);
         uint16_t qty = buffer[off + 2] | (buffer[off + 3] << 8);
         if (id != 0 && id <= 16) { // Si es una PokeBall 
+            if (qty != 0 && !fs::exists(firstPokeballFlag)) { //Si se detecta que hay pokeballs y todavia no existe la flag, se crea
+                std::ofstream file(firstPokeballFlag, std::ios::binary);
+            }
             g_RemovedPokeBalls[id].id = id;
             g_RemovedPokeBalls[id].qty = qty;
             g_MainPocket[i].id = 0;
