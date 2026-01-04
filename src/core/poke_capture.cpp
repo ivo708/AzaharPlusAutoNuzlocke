@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iostream>
 #include <unordered_set>
+#include <windows.h>
 
 #include "common/logging/log.h"
 #include "core/memory.h"
@@ -29,12 +30,19 @@ MemorySystem& Mem() {
     return Core::Global<Core::System>().Memory();
 }
 
-const u32 POCKET_START = 0x8C6EC70;
+const VAddr POCKET_START = 0x8C6AC80;
+const VAddr MEDICINE_POCKET_START = 0x8C6B5F0;
+
 const size_t SLOT_SIZE = 4;
-const size_t SLOT_COUNT = 270;
+
+const size_t SLOT_COUNT = 305;
 const size_t BLOCK_SIZE = SLOT_SIZE * SLOT_COUNT;
 
-const std::set<uint16_t> legendarySpecies = {144, 145, 146, 150, 151,
+const size_t MEDICINE_SLOT_COUNT = 54;
+const size_t MEDICINE_BLOCK_SIZE = SLOT_SIZE * MEDICINE_SLOT_COUNT;
+
+const std::set<uint16_t> legendarySpecies = {
+    144, 145, 146, 150, 151,
                                        243, 244, 245, 249, 250, 251,
                                        377, 378, 379, 380, 381, 382, 383, 384, 385, 386,
                                        480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493,
@@ -94,9 +102,9 @@ struct ItemEntry {
     uint16_t id;
     uint16_t qty;
 };
-static ItemEntry g_MainPocket[270];
+static ItemEntry g_MainPocket[SLOT_COUNT];
 
-static ItemEntry g_RemovedPokeBalls[16];
+static ItemEntry g_RemovedPokeBalls[17];
 
 //Purga slots vacios de un array
 void RemoveEmptySlots(ItemEntry arr[], size_t count) {
@@ -119,12 +127,16 @@ void RemoveEmptySlots(ItemEntry arr[], size_t count) {
 
 //Guarda set de rutas a archivo binario
 void saveVisitedRoutes() {
-    fs::path filePath = fs::current_path() / "user" / "rtp" / "p" / "visRou.bin";
-    fs::create_directories(filePath.parent_path()); // Crear carpetas si no existen
+    char buf[MAX_PATH];
+    GetModuleFileNameA(NULL, buf, MAX_PATH);
+    std::filesystem::path exeDir(buf);
+    exeDir = exeDir.parent_path();
+    fs::path filePath = exeDir / "user" / "rtp" / "p" / "visRou.bin";
+    fs::create_directories(filePath.parent_path());
 
     std::ofstream outFile(filePath, std::ios::binary);
     if (!outFile) {
-        std::cerr << "Error al abrir el archivo para escribir\n";
+        LOG_INFO(HW_Memory, "poke_capture: ERROR AL ESCRIBIR EL ARCHIVO");
         return;
     }
 
@@ -139,11 +151,15 @@ void saveVisitedRoutes() {
 
 //Cargar set de rutas desde archivo binario
 void loadVisitedRoutes() {
-    fs::path filePath = fs::current_path() / "user" / "rtp" / "p" / "visRou.bin";
+    char buf[MAX_PATH];
+    GetModuleFileNameA(NULL, buf, MAX_PATH);
+    std::filesystem::path exeDir(buf);
+    exeDir = exeDir.parent_path();
+    fs::path filePath = exeDir / "user" / "rtp" / "p" / "visRou.bin";
 
     std::ifstream inFile(filePath, std::ios::binary);
     if (!inFile) {
-        std::cerr << "Error al abrir el archivo para leer\n";
+        LOG_INFO(HW_Memory, "poke_capture: ERROR AL ABRIR EL ARCHIVO");
         return;
     }
 
@@ -155,6 +171,8 @@ void loadVisitedRoutes() {
         uint16_t val;
         inFile.read(reinterpret_cast<char*>(&val), sizeof(val));
         g_visitedRoutes.insert(val);
+        LOG_INFO(HW_Memory, "poke_capture: CARGANDO VALORES DESDE EL ARCHIVO: {}",val);
+
     }
 
     inFile.close();
@@ -197,6 +215,7 @@ bool ExportMainPocketToTxt() {
     namespace fs = std::filesystem;
 
     // Construir ruta de exportación
+
     fs::path export_dir = fs::current_path() / "user" / "rtp" / "p";
 
     // Crear directorios si no existen
@@ -227,10 +246,41 @@ bool ExportMainPocketToTxt() {
 
 bool ShouldRemove() {
     LOG_INFO(HW_Memory, "poke_capture: ShouldRemove()");
+
+    //EPISODIO DELTA NO
+    char buf[MAX_PATH];
+    GetModuleFileNameA(NULL, buf, MAX_PATH);
+    std::filesystem::path exeDir(buf);
+    exeDir = exeDir.parent_path();
+    std::filesystem::path rutaDEp_Map = exeDir / "user" / "rtp" / "p" / "DEp_Map.bin";
+    if (fs::exists(rutaDEp_Map)) {
+        return false;
+    } else {
+        LOG_INFO(HW_Memory, "DEp_Map no existe");
+    }
+
     //Contra entrenadores NO
     if (PokeExport::isBattleTrainer()) {
         LOG_INFO(HW_Memory, "poke_capture: COMBATE CONTRA ENTRENADOR");
         return false;
+    }
+
+    loadVisitedRoutes();
+    uint16_t currentMapID = PokeExport::ExportMapID();
+    LOG_INFO(HW_Memory, "poke_capture: MAPA ACTUAL: {}", currentMapID);
+
+    // Si hay Shiny NO (Pero se marca la ruta)
+    for (int i = 0; i < MAX_WILDS; i++) {
+        if (g_wildData[i].isShiny) {
+            LOG_INFO(HW_Memory, "poke_capture: POKEMON SALVAJE SHINY");
+            if (PokeExport::isBattle()) {
+                LOG_INFO(HW_Memory, "poke_capture: MARCANDO RUTA ACTUAL COMO VISITADA: {}",
+                         currentMapID);
+                g_visitedRoutes.insert(currentMapID);
+                saveVisitedRoutes();
+            }
+            return false;
+        }
     }
 
     //Si hay legendarios SI (Antes de marcar ruta como explorada)
@@ -250,20 +300,6 @@ bool ShouldRemove() {
             return true;
         }
     }
-    
-    
-    loadVisitedRoutes();
-    uint16_t currentMapID = PokeExport::ExportMapID();
-
-    //Si hay Shiny NO (Pero se marca la ruta)
-    for (int i = 0; i < MAX_WILDS; i++) {
-        if (g_wildData[i].isShiny) {
-            LOG_INFO(HW_Memory, "poke_capture: POKEMON SALVAJE SHINY");
-            g_visitedRoutes.insert(currentMapID);
-            saveVisitedRoutes();
-            return false;
-        }
-    }
 
     // Ruta ya visitada SI
     if (g_visitedRoutes.find(currentMapID) != g_visitedRoutes.end()) {
@@ -272,13 +308,17 @@ bool ShouldRemove() {
     }
 
     //Si llega aqui significa que es contra pokemon salvaje, ruta nueva y no hay shiny ni legendario.
-    fs::path firstPokeballFlag = fs::current_path() / "user" / "rtp" / "p" / "haspkb.bin";
+    std::filesystem::path firstPokeballFlag = exeDir / "user" / "rtp" / "p" / "haspkb.bin";
     if (fs::exists(firstPokeballFlag)) { //Solo marcar las rutas cuando el jugador haya obtenido las primeras PokeBall
-        g_visitedRoutes.insert(currentMapID);
+
+        if (PokeExport::isBattle()) {
+            LOG_INFO(HW_Memory, "poke_capture: MARCANDO RUTA ACTUAL COMO VISITADA: {}",  currentMapID);
+            g_visitedRoutes.insert(currentMapID);
+            saveVisitedRoutes();
+        }
     }
     saveVisitedRoutes();
     LOG_INFO(HW_Memory, "poke_capture: NADA RELEVANTE PARA LA CAPTURA");
-
     return false;
 }
 
@@ -289,6 +329,28 @@ bool RemovePokeballs() {
     //Cargar todos los pokemon capturados
     loadCaughtPokemon();
 
+    char buf[MAX_PATH];
+    GetModuleFileNameA(NULL, buf, MAX_PATH);
+    std::filesystem::path exeDir(buf);
+    exeDir = exeDir.parent_path();
+    std::filesystem::path firstPokeballFlag = exeDir / "user" / "rtp" / "p" / "haspkb.bin";
+
+    //si no existe la flag, comprobar si hay que crearla
+    if (!fs::exists(firstPokeballFlag)) {
+        std::vector<uint8_t> buffer(BLOCK_SIZE);
+        Mem().ReadBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            size_t off = i * 4;
+            uint16_t id = buffer[off] | (buffer[off + 1] << 8);
+            uint16_t qty = buffer[off + 2] | (buffer[off + 3] << 8);
+            if (id != 0 && id <= 16) {// Pokeball
+                if (qty != 0) {
+                    std::ofstream file(firstPokeballFlag, std::ios::binary);
+                    break;
+                }
+            }
+        }
+    }
 
     if (!ShouldRemove()) {
         LOG_INFO(HW_Memory, "poke_capture: NO SE VAN A QUITAR LAS POKEBALL");
@@ -298,19 +360,23 @@ bool RemovePokeballs() {
 
     std::vector<uint8_t> buffer(BLOCK_SIZE);
     Mem().ReadBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
-    fs::path firstPokeballFlag = fs::current_path() / "user" / "rtp" / "p" / "haspkb.bin";
 
     // Parsear cada slot en id y cantidad y guardarlo en arrays
-    for (size_t i = 0; i < 270; ++i) {
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
         size_t off = i * 4;
         uint16_t id = buffer[off] | (buffer[off + 1] << 8);
         uint16_t qty = buffer[off + 2] | (buffer[off + 3] << 8);
+        //LOG_INFO(HW_Memory, "poke_capture: ITEM->  ID: {} QTY: {}", id, qty);
+
         if (id != 0 && id <= 16) { // Si es una PokeBall 
-            if (qty != 0 && !fs::exists(firstPokeballFlag)) { //Si se detecta que hay pokeballs y todavia no existe la flag, se crea
-                std::ofstream file(firstPokeballFlag, std::ios::binary);
-            }
             g_RemovedPokeBalls[id].id = id;
             g_RemovedPokeBalls[id].qty = qty;
+            g_MainPocket[i].id = 0;
+            g_MainPocket[i].qty = 0;
+        }
+        else if (id == 576) { // Si es una PokeBall
+            g_RemovedPokeBalls[16].id = id;
+            g_RemovedPokeBalls[16].qty = qty;
             g_MainPocket[i].id = 0;
             g_MainPocket[i].qty = 0;
         } else {
@@ -328,23 +394,53 @@ bool RemovePokeballs() {
         buffer[off + 3] = g_MainPocket[i].qty >> 8;
     }
     // Escribir el bloque completo en memoria
+    LOG_INFO(HW_Memory, "poke_export: Escribiendo en memoria removePokeball");
     Mem().WriteBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
-
-    ExportMainPocketToTxt();
-
-
+    //ExportMainPocketToTxt();
     return true;
 }
 
+void RemoveCandies() {
+    LOG_INFO(HW_Memory, "poke_capture: RemoveCandies()");
+
+    std::vector<uint8_t> buffer(MEDICINE_BLOCK_SIZE);
+    Mem().ReadBlock(MEDICINE_POCKET_START, buffer.data(), MEDICINE_BLOCK_SIZE);
+    ItemEntry bolsillo_medicina[MEDICINE_SLOT_COUNT];
+    // Parsear cada slot en id y cantidad y guardarlo en arrays
+    for (size_t i = 0; i < MEDICINE_SLOT_COUNT; ++i) {
+        size_t off = i * SLOT_SIZE;
+        uint16_t id = buffer[off] | (buffer[off + 1] << 8);
+        uint16_t qty = buffer[off + 2] | (buffer[off + 3] << 8);
+        LOG_INFO(HW_Memory, "poke_capture: id: {}, qty: {}", id, qty);
+
+        if (id == 50) {
+            bolsillo_medicina[i].id = 0;
+            bolsillo_medicina[i].qty = 0;
+        } else {
+            bolsillo_medicina[i].id = id;
+            bolsillo_medicina[i].qty = qty;
+        }
+    }
+    RemoveEmptySlots(bolsillo_medicina, MEDICINE_SLOT_COUNT);
+    // Devolver a memoria con los cambios hechos
+    for (size_t i = 0; i < MEDICINE_SLOT_COUNT; ++i) {
+
+        size_t off = i * SLOT_SIZE;
+        buffer[off + 0] = bolsillo_medicina[i].id & 0xFF;
+        buffer[off + 1] = bolsillo_medicina[i].id >> 8;
+        buffer[off + 2] = bolsillo_medicina[i].qty & 0xFF;
+        buffer[off + 3] = bolsillo_medicina[i].qty >> 8;
+    }
+    LOG_INFO(HW_Memory, "poke_export: Escribiendo en memoria removeCandies");
+    Mem().WriteBlock(MEDICINE_POCKET_START, buffer.data(), MEDICINE_BLOCK_SIZE);
+    return;
+}
 
 // Devuelve las PokeBalls
 bool RestorePokeballs() {
-    if (!ShouldRemove())
-        return false;
-
     // Devolver las Pokeball
     size_t insertCount = 0;
-    for (size_t i = 0; i < 16; ++i) {
+    for (size_t i = 0; i < 17; ++i) {
         if (g_RemovedPokeBalls[i].qty != 0) {
             insertCount++;
         }
@@ -360,7 +456,7 @@ bool RestorePokeballs() {
     Mem().ReadBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
 
     // Parsear cada slot en id y cantidad y guardarlo en arrays (por si se han gastado items)
-    for (size_t i = 0; i < 270; ++i) {
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
         size_t off = i * 4;
         uint16_t id = buffer[off] | (buffer[off + 1] << 8);
         uint16_t qty = buffer[off + 2] | (buffer[off + 3] << 8);
@@ -373,11 +469,11 @@ bool RestorePokeballs() {
     // memmove permite solapamiento sin problemas
     memmove(&g_MainPocket[insertCount], // destino
             &g_MainPocket[0],           // origen
-            (270 - insertCount) * sizeof(ItemEntry));
+            (SLOT_COUNT - insertCount) * sizeof(ItemEntry));
 
     // Insertar los removed balls al inicio
     size_t writeIndex = 0;
-    for (size_t i = 0; i < 16; ++i) {
+    for (size_t i = 0; i < 17; ++i) {
         if (g_RemovedPokeBalls[i].qty != 0) {
             g_MainPocket[writeIndex++] = g_RemovedPokeBalls[i];
         }
@@ -393,6 +489,7 @@ bool RestorePokeballs() {
         buffer[off + 3] = g_MainPocket[i].qty >> 8;
     }
     // Escribir el bloque completo en memoria
+    LOG_INFO(HW_Memory, "poke_export: Escribiendo en memoria restorePokeball");
     Mem().WriteBlock(POCKET_START, buffer.data(), BLOCK_SIZE);
 
     //Vaciar los arrays globales

@@ -7,9 +7,11 @@
 #include <chrono>
 #include <string>
 #include <filesystem>
+#include <windows.h>
 
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/binary_object.hpp>
+
 #include "audio_core/dsp_interface.h"
 #include "common/archives.h"
 #include "common/assert.h"
@@ -48,22 +50,25 @@ void PageTable::Clear() {
 void MaybeExportParty() {
     using namespace std::chrono;
     static auto last_export = steady_clock::now();
+    static auto last_export2 = steady_clock::now();
 
     auto now = steady_clock::now();
-    if (duration_cast<seconds>(now - last_export).count() >= 2) {
-        last_export = now;
+    if ((now - last_export2) >= milliseconds(100)) {
+        last_export2 = now;
 
-        // Directorio relativo al ejecutable
-        std::filesystem::path export_dir_p = std::filesystem::current_path() / "user" / "rtp" / "p";
-        std::filesystem::create_directories(export_dir_p);
-        PokeExport::ExportParty(PokeExport::Game::ORAS, export_dir_p.string());
+        PokeExport::CheckDeadPokemon();
 
-        //PokeExport::ExportBox(PokeExport::Game::ORAS, export_dir_b.string());
-        
-        //PokeExport::ExportMapID();
-
-        //PokeExport::SearchMemoryValue(708, "HP máximo");
-
+        if ((now - last_export) >= seconds(2)) {
+            last_export = now;
+            // Directorio relativo al ejecutable
+            char buf[MAX_PATH];
+            GetModuleFileNameA(NULL, buf, MAX_PATH);
+            std::filesystem::path exeDir(buf);
+            exeDir = exeDir.parent_path();
+            std::filesystem::path export_dir_p = exeDir / "user" / "rtp" / "p";
+            std::filesystem::create_directories(export_dir_p);
+            PokeExport::ExportParty(PokeExport::Game::ORAS, export_dir_p.string());
+        }
 
     }
 }
@@ -413,7 +418,6 @@ SERIALIZE_IMPL(MemorySystem)
 void MemorySystem::SetCurrentPageTable(std::shared_ptr<PageTable> page_table) {
     impl->current_page_table = page_table;
     MaybeExportParty();
-    // ==== END trigger ====
 }
 
 

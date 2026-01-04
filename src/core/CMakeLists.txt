@@ -488,6 +488,8 @@ add_library(citra_core STATIC
 	poke_capture.h
     poke_export.cpp
     poke_export.h
+    poke_reader.cpp
+    poke_reader.h
     perf_stats.cpp
     perf_stats.h
     precompiled_headers.h

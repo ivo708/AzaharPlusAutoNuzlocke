@@ -38,29 +38,21 @@ std::string GetCurrentSaveDataPath() {
     if (program_id == 0)
         return "";
 
-    wchar_t exePath[MAX_PATH];
-    if (GetModuleFileNameW(NULL, exePath, MAX_PATH) == 0)
-        return "";
+    char buf[MAX_PATH];
+    GetModuleFileNameA(NULL, buf, MAX_PATH);
+    std::filesystem::path exeDir(buf);
+    exeDir = exeDir.parent_path();
+    std::filesystem::path sdmc_dir = exeDir / "user" / "sdmc";
 
-    std::wstring pathW(exePath);
-
-    // Carpeta base del emulador
-    size_t pos = pathW.find_last_of(L"\\/");
-    if (pos != std::wstring::npos)
-        pathW = pathW.substr(0, pos);
-
-    // Añadir "user/sdmc"
-    pathW += L"\\user\\sdmc";
 
     // Obtener ruta relativa dentro de sdmc (sin /sdmc inicial)
     std::string relativePath =
         FileSys::ArchiveSource_SDSaveData::GetSaveDataPathFor("/", program_id);
 
     // Unir rutas
-    std::filesystem::path fullPath(pathW);
-    fullPath /= std::filesystem::path(relativePath).relative_path();
+    sdmc_dir /= std::filesystem::path(relativePath).relative_path();
 
-    std::string finalPath = fullPath.string();
+    std::string finalPath = sdmc_dir.string();
 
     LOG_INFO(HW_Memory, "poke_antirq: Archivo de guardado: {}", finalPath);
     return finalPath;

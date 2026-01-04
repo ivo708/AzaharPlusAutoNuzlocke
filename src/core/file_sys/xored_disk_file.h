@@ -17,7 +17,7 @@ public:
         auto result = DiskFile::Read(offset, length, buffer);
         if (result) {
             std::size_t read_bytes = *result;
-            XorBuffer(buffer, read_bytes);
+            XorBuffer(buffer, offset, read_bytes);
         }
         return result;
     }
@@ -25,14 +25,14 @@ public:
     ResultVal<std::size_t> Write(u64 offset, size_t length, bool flush, bool update_timestamp,
                                  const u8* buffer) override {
         std::vector<u8> tmp(buffer, buffer + length);
-        XorBuffer(tmp.data(), tmp.size());
+        XorBuffer(tmp.data(), offset, tmp.size());
         return DiskFile::Write(offset, length, flush, update_timestamp, tmp.data());
     }
 
 private:
-    void XorBuffer(u8* buf, size_t len) const {
+    void XorBuffer(u8* buf, u64 offset, size_t len) const {
         for (size_t i = 0; i < len; ++i) {
-            buf[i] ^= key_bytes_[i % key_len_];
+            buf[i] ^= key_bytes_[(offset + i) % key_len_];
         }
     }
 

@@ -95,7 +95,7 @@ ResultVal<std::unique_ptr<FileBackend>> SaveDataArchive::OpenFile(const Path& pa
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<SaveDataDelayGenerator>();
 
     //Save normal para debug
-    return std::make_unique<DiskFile>(std::move(io_file), mode, std::move(delay_generator));
+    //return std::make_unique<DiskFile>(std::move(io_file), mode, std::move(delay_generator));
 
 
 
